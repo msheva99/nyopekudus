@@ -3,16 +3,63 @@
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
 
+// ✅ FUNGSI GENERATE DEVICE SIGNATURE (Multi-Factor Fingerprint)
+function getDeviceSignature() {
+  // 1. Canvas Fingerprint
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    ctx.textBaseline = 'top';
+    ctx.font = '14px Arial';
+    ctx.fillStyle = '#f60';
+    ctx.fillRect(0, 0, 100, 20);
+    ctx.fillStyle = '#069';
+    ctx.fillText('Nyopee', 2, 2);
+  }
+  const canvasHash = canvas.toDataURL().substring(0, 100);
+
+  // 2. Screen Resolution
+  const screen = `${window.screen.width}x${window.screen.height}x${window.screen.colorDepth}`;
+
+  // 3. Timezone
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  // 4. Language
+  const language = navigator.language;
+
+  // 5. Platform
+  const platform = navigator.platform;
+
+  return {
+    canvas: canvasHash,
+    screen,
+    timezone,
+    language,
+    platform
+  };
+}
+
 export default function PromoNyopeeGo() {
   const [status, setStatus] = useState<'loading' | 'success' | 'already' | 'soldout'>('loading');
   const [remaining, setRemaining] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<string>('');
 
-  // ✅ LOGIKA BARU - Pure API (NO localStorage)
+  // ✅ LOGIKA BARU - Multi-Factor Device Fingerprint
   useEffect(() => {
     const checkPromo = async () => {
       try {
-        const res = await fetch('/api/promo');
+        // Generate device signature
+        const signature = getDeviceSignature();
+        
+        // Kirim ke API dengan POST method
+        const res = await fetch('/api/promo', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ signature })
+        });
+        
         const data = await res.json();
         setRemaining(data.remaining ?? 0);
 
@@ -24,6 +71,7 @@ export default function PromoNyopeeGo() {
           setStatus('soldout');
         }
       } catch (e) {
+        console.error('Promo check error:', e);
         setStatus('soldout');
       }
     };
