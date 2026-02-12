@@ -6,32 +6,25 @@ import Image from 'next/image';
 export default function PromoNyopeeGo() {
   const [status, setStatus] = useState<'loading' | 'success' | 'already' | 'soldout'>('loading');
   const [remaining, setRemaining] = useState<number>(15);
+  const [currentTime, setCurrentTime] = useState<string>('');
 
+  // Effect untuk mengecek promo
   useEffect(() => {
     const checkPromo = async () => {
-      // 1. CEK JEJAK DI BROWSER DULU (Local Storage)
       const hasLocalClaim = localStorage.getItem('nyopee_already_claimed');
       
       try {
         const res = await fetch('/api/promo');
         const data = await res.json();
-        
         setRemaining(data.remaining ?? 0);
 
-        // 2. JIKA REDIS BILANG SUDAH (already: true) ATAU BROWSER PUNYA TANDA
         if (data.already || hasLocalClaim === 'true') {
           setStatus('already');
-          // Pastikan local storage tetap terisi jika ternyata data.already yang true
           localStorage.setItem('nyopee_already_claimed', 'true');
-        } 
-        // 3. JIKA KLAIM BARU BERHASIL
-        else if (data.success) {
-          // KUNCI DI BROWSER SAAT ITU JUGA
+        } else if (data.success) {
           localStorage.setItem('nyopee_already_claimed', 'true');
           setStatus('success');
-        } 
-        // 4. JIKA KUOTA HABIS
-        else {
+        } else {
           setStatus('soldout');
         }
       } catch (e) {
@@ -39,6 +32,19 @@ export default function PromoNyopeeGo() {
       }
     };
     checkPromo();
+  }, []);
+
+  // Effect untuk Jam Digital (Real-time)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = new Date();
+      setCurrentTime(now.toLocaleTimeString('id-ID', { 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        second: '2-digit' 
+      }));
+    }, 1000);
+    return () => clearInterval(timer);
   }, []);
 
   const BackgroundWrapper = ({ children }: { children: React.ReactNode }) => (
@@ -53,7 +59,6 @@ export default function PromoNyopeeGo() {
         />
         <div className="absolute inset-0 bg-black/30"></div>
       </div>
-      
       <div className="relative z-10 w-full flex justify-center scale-[0.9] xs:scale-95 sm:scale-100 transition-transform">
         {children}
       </div>
@@ -68,61 +73,80 @@ export default function PromoNyopeeGo() {
     );
   }
 
-  if (status === 'success' || status === 'already') {
+  // --- 1. TAMPILAN SUDAH DIKLAIM (PAGE BARU) ---
+  if (status === 'already') {
     return (
       <BackgroundWrapper>
-        {/* REVISI: p-6 diubah ke pt-4 pb-6 agar konten lebih naik ke atas */}
+        <div className="w-full max-w-[300px] bg-white rounded-[2.5rem] shadow-2xl text-center p-8 border-4 border-green-600 animate-in fade-in zoom-in duration-500">
+          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <span className="text-4xl text-green-600">✓</span>
+          </div>
+          <h2 className="text-[22px] font-black text-green-700 leading-tight uppercase mb-2">
+            PROMO SUDAH<br/>PERNAH DIKLAIM
+          </h2>
+          <div className="h-1 w-12 bg-green-200 mx-auto mb-4" />
+          <p className="text-[11px] font-bold text-gray-500 leading-relaxed uppercase">
+            Maaf, satu akun/perangkat <br/> 
+            hanya berlaku untuk satu kali klaim. <br/>
+            Sampai jumpa di promo berikutnya!
+          </p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="mt-8 text-[9px] font-black text-green-600 underline uppercase tracking-widest"
+          >
+            Refresh Status
+          </button>
+        </div>
+      </BackgroundWrapper>
+    );
+  }
+
+  // --- 2. TAMPILAN BERHASIL KLAIM (KUPON AKTIF) ---
+  if (status === 'success') {
+    return (
+      <BackgroundWrapper>
         <div className="w-full max-w-[320px] bg-[#FDFCFB] rounded-[2.5rem] shadow-2xl text-center pt-4 pb-6 px-6 border-4 border-[#5C4033] animate-in fade-in zoom-in duration-500">
           
-          {/* Logo Brand */}
           <div className="relative w-24 h-12 mx-auto mb-1">
-            <Image 
-              src="/images/logo.png" 
-              alt="NYOPEE GO" 
-              fill 
-              className="object-contain" 
-            />
+            <Image src="/images/logo.png" alt="NYOPEE GO" fill className="object-contain" />
           </div>
 
           <div className="space-y-1 mb-3">
-            {/* Header: Posisi naik ke atas karena pengurangan margin/padding */}
             <h2 className="text-[20px] font-black text-[#5C4033] tracking-tighter uppercase leading-tight">
               YEAY! ES TEH + ES KOPI KLEPON MINI GRATIS
             </h2>
-            <p className="text-[11px] font-bold text-stone-500 uppercase">
-              buat kamu yang lagi haus!
-            </p>
+            <div className="inline-block px-3 py-1 bg-amber-100 rounded-full">
+               <p className="text-[10px] font-black text-amber-800 uppercase tabular-nums">
+                🕒 {currentTime || '--:--:--'}
+              </p>
+            </div>
           </div>
 
-          {/* REVISI: GRATIS 1 diperbesar (text-[42px]) */}
           <div className="my-4">
             <h1 className="text-[42px] font-extrabold text-[#8B4513] leading-[0.8] tracking-tighter italic">
               GRATIS 1<br/>
-              <span className="text-[12px] not-italic font-black block mt-1 tracking-widest">
-              ES TEH + ES KOPI KLEPON MINI</span>
+              <span className="text-[12px] not-italic font-black block mt-1 tracking-widest uppercase">
+              Es Teh + Es Kopi Klepon Mini</span>
             </h1>
           </div>
 
           <div className="mb-4">
             <p className="text-[9px] font-bold text-stone-400 italic">
-              *Dengan minimal pembelian 2 varian Es Kopi Blend
+              *Minimal pembelian 2 varian Es Kopi Blend
             </p>
           </div>
 
-          {/* Lokasi Outlet */}
-          <div className="mb-4 text-center">
-            <p className="text-[7px] font-bold text-gray-400 uppercase italic mb-1.5 tracking-wide">
-              Klik tag lokasi untuk menemukan outlet
-            </p>
+          {/* Lokasi */}
+          <div className="mb-4">
             <a 
-              href="https://maps.app.goo.gl/yrgYCBMhv5961bsLA?g_st=ic" 
+              href="https://maps.google.com" 
               target="_blank" 
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 border border-orange-100 bg-white rounded-xl px-3 py-2 w-full shadow-sm hover:bg-orange-50 active:scale-95 transition-all text-left"
+              className="inline-flex items-center gap-2 border border-orange-100 bg-white rounded-xl px-3 py-2 w-full shadow-sm"
             >
               <span className="text-orange-500 text-base">📍</span>
-              <div>
-                <p className="text-[10px] font-black text-gray-800 leading-none">Jl. Budi Utomo, Krajan Kidul, Jepang Pakis</p>
+              <div className="text-left">
+                <p className="text-[10px] font-black text-gray-800 leading-none">Jl. Budi Utomo, Jepang Pakis</p>
                 <p className="text-[8px] text-gray-400 font-medium">Kec. Jati, Kab. Kudus</p>
               </div>
             </a>
@@ -131,14 +155,10 @@ export default function PromoNyopeeGo() {
           {/* Kuota */}
           <div className="bg-[#5C4033] rounded-2xl py-3 mb-4 text-white shadow-lg">
             <div className="flex justify-center items-baseline gap-1.5">
-              <span className="text-3xl font-black tabular-nums">
-                {String(remaining).padStart(2, '0')}
-              </span>
+              <span className="text-3xl font-black tabular-nums">{String(remaining).padStart(2, '0')}</span>
               <span className="text-xs font-bold">ORANG LAGI</span>
             </div>
-            <p className="text-[8px] font-bold uppercase tracking-widest opacity-80 mt-1">
-              Siapa cepat dia dapat!
-            </p>
+            <p className="text-[8px] font-bold uppercase tracking-widest opacity-80 mt-1">Siapa cepat dia dapat!</p>
           </div>
 
           {/* Instruksi */}
@@ -151,26 +171,21 @@ export default function PromoNyopeeGo() {
             </div>
           </div>
 
-          <p className="mt-4 text-[8px] text-stone-400 font-bold uppercase tracking-tighter">
+          <p className="mt-4 text-[8px] text-stone-400 font-bold uppercase">
             Promo terbatas untuk 20 orang pertama
           </p>
-          
-          {status === 'already' && (
-             <div className="mt-3 inline-block px-3 py-0.5 bg-green-50 text-green-700 text-[8px] font-bold rounded-full border border-green-100">
-               ✓ Kopi Kamu Sudah Diklaim
-             </div>
-          )}
         </div>
       </BackgroundWrapper>
     );
   }
 
+  // --- 3. TAMPILAN SOLDOUT ---
   return (
     <BackgroundWrapper>
       <div className="bg-white p-8 rounded-[2.5rem] shadow-xl max-w-[280px] w-full text-center border-4 border-stone-100">
-        <h1 className="text-xl font-black text-stone-400 uppercase">WADUH, HABIS!</h1>
-        <p className="text-stone-500 text-[10px] mt-2 leading-relaxed">
-          Kopi gratisnya sudah habis terjual. Pantau terus Instagram NYOPEE untuk promo seru lainnya!
+        <h1 className="text-xl font-black text-stone-400 uppercase leading-none mb-2">WADUH,<br/>HABIS!</h1>
+        <p className="text-stone-500 text-[10px] leading-relaxed uppercase font-bold">
+          Kopi gratisnya sudah habis. Pantau terus Instagram NYOPEE untuk promo berikutnya!
         </p>
       </div>
     </BackgroundWrapper>
