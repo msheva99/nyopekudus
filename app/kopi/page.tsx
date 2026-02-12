@@ -145,7 +145,7 @@ export default function PromoNyopeeGo() {
 
           <div className="mb-4">
             <p className="text-[9px] font-bold text-stone-400 italic">
-              *Minimal pembelian 2 varian Es Kopi Blend
+              *Untuk pembelian varian kopi
             </p>
           </div>
 
