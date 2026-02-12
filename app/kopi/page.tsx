@@ -4,44 +4,81 @@ import { useEffect, useState } from 'react';
 import Image from 'next/image';
 
 export default function PromoNyopeeGo() {
-  const [status, setStatus] = useState<'loading' | 'success' | 'already' | 'soldout'>('loading');
+  const [status, setStatus] = useState<'loading' | 'check' | 'success' | 'already' | 'soldout'>('loading');
   const [remaining, setRemaining] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<string>('');
+  const [claiming, setClaiming] = useState(false);
 
-  // 1. Logika Pengecekan Promo & Kunci Perangkat
+  // 1. CEK STATUS AWAL (Tidak Klaim Otomatis!)
   useEffect(() => {
-    const checkPromo = async () => {
-      // Ambil tanda dari browser (Local Storage)
+    const checkStatus = async () => {
       const hasLocalClaim = localStorage.getItem('nyopee_already_claimed');
       
+      // Jika browser sudah punya tanda, langsung ke halaman "already"
+      if (hasLocalClaim === 'true') {
+        setStatus('already');
+        return;
+      }
+
       try {
-        const res = await fetch('/api/promo');
+        // GET = Cek status saja, tidak klaim!
+        const res = await fetch('/api/promo', { method: 'GET' });
         const data = await res.json();
+        
         setRemaining(data.remaining ?? 0);
 
-        // Jika API bilang sudah (by IP/Database) ATAU Browser punya tanda sudah klaim
-        if (data.already || hasLocalClaim === 'true') {
+        if (data.already) {
+          // Server bilang sudah klaim (berdasarkan fingerprint)
+          localStorage.setItem('nyopee_already_claimed', 'true');
           setStatus('already');
-          localStorage.setItem('nyopee_already_claimed', 'true');
-        } 
-        // Jika klaim baru berhasil
-        else if (data.success) {
-          localStorage.setItem('nyopee_already_claimed', 'true');
-          setStatus('success');
-        } 
-        // Jika kuota habis
-        else {
+        } else if (data.canClaim) {
+          // Bisa klaim - tampilkan tombol
+          setStatus('check');
+        } else {
+          // Kuota habis
           setStatus('soldout');
         }
       } catch (e) {
-        // Jika error, anggap soldout demi keamanan
+        console.error("Check status error:", e);
         setStatus('soldout');
       }
     };
-    checkPromo();
+
+    checkStatus();
   }, []);
 
-  // 2. Logika Jam Digital Real-time (Anti-Screenshot)
+  // 2. FUNGSI KLAIM PROMO (Dipanggil saat user tekan tombol)
+  const handleClaim = async () => {
+    setClaiming(true);
+    
+    try {
+      // POST = Klaim promo sebenarnya
+      const res = await fetch('/api/promo', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      const data = await res.json();
+      setRemaining(data.remaining ?? 0);
+
+      if (data.success) {
+        localStorage.setItem('nyopee_already_claimed', 'true');
+        setStatus('success');
+      } else if (data.already) {
+        localStorage.setItem('nyopee_already_claimed', 'true');
+        setStatus('already');
+      } else {
+        setStatus('soldout');
+      }
+    } catch (e) {
+      console.error("Claim error:", e);
+      alert("Terjadi kesalahan. Silakan coba lagi.");
+    } finally {
+      setClaiming(false);
+    }
+  };
+
+  // 3. Jam Digital Real-time (Anti-Screenshot)
   useEffect(() => {
     const timer = setInterval(() => {
       const now = new Date();
@@ -73,7 +110,7 @@ export default function PromoNyopeeGo() {
     </div>
   );
 
-  // --- Tampilan Loading ---
+  // --- LOADING ---
   if (status === 'loading') {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center text-amber-900 font-bold text-sm">
@@ -82,7 +119,58 @@ export default function PromoNyopeeGo() {
     );
   }
 
-  // --- 1. TAMPILAN SUDAH DIKLAIM (PAGE KHUSUS) ---
+  // --- TAMPILAN TOMBOL KLAIM (Status: check) ---
+  if (status === 'check') {
+    return (
+      <BackgroundWrapper>
+        <div className="relative w-full max-w-[320px] bg-[#FDFCFB] rounded-[2.5rem] shadow-2xl text-center pt-6 pb-6 px-6 border-4 border-[#5C4033] animate-in fade-in zoom-in duration-500">
+          
+          <div className="relative w-24 h-12 mx-auto mb-3">
+            <Image src="/images/logo.png" alt="NYOPEE GO" fill className="object-contain" />
+          </div>
+
+          <h2 className="text-[22px] font-black text-[#5C4033] tracking-tighter uppercase leading-tight mb-2">
+            KLAIM PROMO<br/>ES TEH + KOPI KLEPON MINI GRATIS!
+          </h2>
+
+          <div className="my-5">
+            <h1 className="text-[42px] font-extrabold text-[#8B4513] leading-[0.8] tracking-tighter italic">
+              GRATIS 1<br/>
+              <span className="text-[12px] not-italic font-black block mt-1 tracking-widest uppercase text-[#5C4033]">
+              Es Teh + Es Kopi Klepon Mini</span>
+            </h1>
+          </div>
+
+          <p className="text-[9px] font-bold text-stone-400 italic mb-4">
+            *Minimal pembelian 2 varian Es Kopi Blend
+          </p>
+
+          {/* Sisa Kuota */}
+          <div className="bg-[#5C4033] rounded-2xl py-3 mb-5 text-white shadow-lg">
+            <div className="flex justify-center items-baseline gap-1.5">
+              <span className="text-3xl font-black tabular-nums">{String(remaining).padStart(2, '0')}</span>
+              <span className="text-xs font-bold">TERSISA</span>
+            </div>
+          </div>
+
+          {/* TOMBOL KLAIM */}
+          <button
+            onClick={handleClaim}
+            disabled={claiming}
+            className="w-full bg-gradient-to-r from-amber-500 to-orange-600 text-white font-black text-base py-4 rounded-2xl shadow-lg active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wide"
+          >
+            {claiming ? '⏳ Sedang Diklaim...' : '🎁 KLAIM SEKARANG'}
+          </button>
+
+          <p className="mt-4 text-[8px] text-stone-400 font-bold uppercase tracking-widest">
+            Promo terbatas untuk hari ini
+          </p>
+        </div>
+      </BackgroundWrapper>
+    );
+  }
+
+  // --- TAMPILAN SUDAH DIKLAIM ---
   if (status === 'already') {
     return (
       <BackgroundWrapper>
@@ -100,7 +188,10 @@ export default function PromoNyopeeGo() {
             Sampai jumpa di promo berikutnya!
           </p>
           <button 
-            onClick={() => window.location.reload()}
+            onClick={() => {
+              localStorage.removeItem('nyopee_already_claimed');
+              window.location.reload();
+            }}
             className="mt-8 text-[9px] font-black text-red-400 underline uppercase tracking-widest hover:text-red-600 transition-colors"
           >
             Refresh Status
@@ -110,13 +201,12 @@ export default function PromoNyopeeGo() {
     );
   }
 
-  // --- 2. TAMPILAN BERHASIL KLAIM (KUPON AKTIF) ---
+  // --- TAMPILAN BERHASIL KLAIM ---
   if (status === 'success') {
     return (
       <BackgroundWrapper>
         <div className="relative w-full max-w-[320px] bg-[#FDFCFB] rounded-[2.5rem] shadow-2xl text-center pt-4 pb-6 px-6 border-4 border-[#5C4033] animate-in fade-in zoom-in duration-500 overflow-hidden">
           
-          {/* Animasi Cahaya Halus di Background (Anti-Screenshot) */}
           <div className="absolute -top-10 -right-10 w-32 h-32 bg-amber-100/30 rounded-full animate-pulse"></div>
           
           <div className="relative w-24 h-12 mx-auto mb-1">
@@ -127,7 +217,7 @@ export default function PromoNyopeeGo() {
             <h2 className="text-[20px] font-black text-[#5C4033] tracking-tighter uppercase leading-tight">
               YEAY! ES TEH + ES KOPI KLEPON MINI GRATIS
             </h2>
-            {/* Jam Digital Real-time dengan Animasi Bounce */}
+            {/* Jam Digital Real-time */}
             <div className="inline-block px-4 py-1 bg-green-600 rounded-full shadow-md animate-bounce mt-1">
                <p className="text-[11px] font-bold text-white tabular-nums uppercase">
                 🕒 Live: {currentTime || '--:--:--'}
@@ -171,7 +261,6 @@ export default function PromoNyopeeGo() {
               <span className="text-3xl font-black tabular-nums">{String(remaining).padStart(2, '0')}</span>
               <span className="text-xs font-bold">ORANG LAGI</span>
             </div>
-            {/* Animasi pulse lembut pada bar kuota */}
             <div className="absolute inset-0 bg-white/5 animate-pulse"></div>
           </div>
 
@@ -193,7 +282,7 @@ export default function PromoNyopeeGo() {
     );
   }
 
-  // --- 3. TAMPILAN SOLDOUT (KUOTA HABIS) ---
+  // --- TAMPILAN SOLDOUT ---
   return (
     <BackgroundWrapper>
       <div className="bg-white p-8 rounded-[2.5rem] shadow-xl max-w-[280px] w-full text-center border-4 border-stone-100 animate-in fade-in duration-700">
