@@ -6,118 +6,95 @@ const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN!,
 });
 
-// HELPER: Buat Device Fingerprint yang lebih robust
+// 🔧 PERBAIKAN: Device Fingerprint Lebih Kuat
 function generateDeviceFingerprint(req: NextRequest): string {
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0] || 
-             req.headers.get('x-real-ip') || 
-             '127.0.0.1';
+  // 1. IP Address (prioritaskan x-forwarded-for untuk Vercel)
+  const forwardedFor = req.headers.get('x-forwarded-for');
+  const ip = forwardedFor 
+    ? forwardedFor.split(',')[0].trim() 
+    : (req.headers.get('x-real-ip') || '127.0.0.1');
   
+  // 2. User Agent (JANGAN di-slice, simpan FULL!)
   const ua = req.headers.get('user-agent') || 'unknown';
   
-  // Tambahkan accept-language untuk diferensiasi lebih baik
-  const lang = req.headers.get('accept-language')?.slice(0, 10) || '';
+  // 3. Accept-Language (untuk diferensiasi lebih baik)
+  const lang = req.headers.get('accept-language') || '';
   
-  // Kombinasi yang lebih unik
-  const rawFingerprint = `${ip}::${ua}::${lang}`;
+  // 4. Accept-Encoding (tambahan identifier)
+  const encoding = req.headers.get('accept-encoding') || '';
   
+  // Kombinasi SEMUA faktor dengan delimiter jelas
+  const rawFingerprint = `IP:${ip}|UA:${ua}|LANG:${lang}|ENC:${encoding}`;
+  
+  // Hash dengan base64 TANPA slice (biar full unique)
   return Buffer.from(rawFingerprint)
     .toString('base64')
-    .replace(/[/+=]/g, '')
-    .slice(0, 200); // Lebih panjang untuk menghindari collision
+    .replace(/[/+=]/g, '_'); // Replace special chars agar aman jadi Redis key
 }
 
 // ========================================
-// ENDPOINT GET: CEK STATUS (Tidak mengklaim!)
+// ENDPOINT GET: CEK & KLAIM (KONSEP ASLI USER)
 // ========================================
 export async function GET(req: NextRequest) {
   try {
     const quotaKey = 'kuota_nyopekudus';
+    
+    // Generate device fingerprint yang lebih robust
     const deviceId = generateDeviceFingerprint(req);
     const claimKey = `user_claimed_nyopekudus:${deviceId}`;
 
-    // Cek status klaim dan sisa kuota (READ-ONLY, tidak ubah data)
+    // Debug log (hapus setelah testing)
+    console.log('Device Fingerprint:', deviceId.slice(0, 50) + '...');
+    console.log('IP:', req.headers.get('x-forwarded-for')?.split(',')[0]);
+    console.log('UA:', req.headers.get('user-agent')?.slice(0, 50) + '...');
+
+    // CEK: Apakah device ini sudah pernah klaim?
     const [hasClaimed, currentQuotaStr] = await redis.mget<[string | null, string | null]>(
       claimKey, 
       quotaKey
     );
     
-    const currentQuota = currentQuotaStr !== null ? parseInt(currentQuotaStr) : 15;
+    let currentQuota = currentQuotaStr !== null ? parseInt(currentQuotaStr) : 15;
 
-    return NextResponse.json({
-      already: !!hasClaimed,
-      remaining: currentQuota > 0 ? currentQuota : 0,
-      canClaim: !hasClaimed && currentQuota > 0
-    });
-
-  } catch (error) {
-    console.error("Status Check Error:", error);
-    return NextResponse.json(
-      { already: false, remaining: 0, canClaim: false, error: "Check failed" }, 
-      { status: 500 }
-    );
-  }
-}
-
-// ========================================
-// ENDPOINT POST: KLAIM PROMO (Aksi sebenarnya!)
-// ========================================
-export async function POST(req: NextRequest) {
-  try {
-    const quotaKey = 'kuota_nyopekudus';
-    const deviceId = generateDeviceFingerprint(req);
-    const claimKey = `user_claimed_nyopekudus:${deviceId}`;
-
-    // 1. CEK APAKAH SUDAH PERNAH KLAIM
-    const hasClaimed = await redis.get(claimKey);
-    
+    // JIKA SUDAH PERNAH KLAIM
     if (hasClaimed) {
-      const currentQuota = await redis.get(quotaKey) || 0;
       return NextResponse.json({
         success: false,
         already: true,
-        remaining: typeof currentQuota === 'string' ? parseInt(currentQuota) : currentQuota,
-        message: "Perangkat ini sudah pernah mengklaim promo"
+        remaining: currentQuota > 0 ? currentQuota : 0
       });
     }
 
-    // 2. KLAIM PROMO (ATOMIC OPERATION)
-    const newQuota = await redis.decr(quotaKey);
+    // PROSES KLAIM BARU (ATOMIC)
+    if (currentQuota > 0) {
+      const newQuota = await redis.decr(quotaKey);
 
-    // Jika berhasil (kuota masih >= 0 setelah dikurangi)
-    if (newQuota >= 0) {
-      // Lock perangkat ini selama 24 jam
-      await redis.set(claimKey, "true", { ex: 86400 });
-      
-      return NextResponse.json({
-        success: true,
-        already: false,
-        remaining: newQuota,
-        message: "Promo berhasil diklaim!"
-      });
-    } 
-    
-    // Jika kuota habis tepat saat klaim
-    else {
-      // Kembalikan kuota ke 0 (jangan sampai minus)
-      await redis.set(quotaKey, 0);
-      
-      return NextResponse.json({
-        success: false,
-        already: false,
-        remaining: 0,
-        message: "Maaf, kuota promo sudah habis"
-      });
+      // Klaim berhasil
+      if (newQuota >= 0) {
+        // LOCK device selama 24 jam
+        await redis.set(claimKey, "true", { ex: 86400 });
+        
+        return NextResponse.json({
+          success: true,
+          remaining: newQuota
+        });
+      } else {
+        // Kuota habis tepat saat request
+        await redis.set(quotaKey, 0);
+      }
     }
+
+    // KUOTA HABIS
+    return NextResponse.json({
+      success: false,
+      already: false,
+      remaining: 0
+    });
 
   } catch (error) {
-    console.error("Claim Error:", error);
+    console.error("Promo API Error:", error);
     return NextResponse.json(
-      { 
-        success: false, 
-        already: false,
-        remaining: 0, 
-        error: "Terjadi kesalahan saat klaim promo" 
-      }, 
+      { success: false, remaining: 0, error: "Internal Server Error" }, 
       { status: 500 }
     );
   }
