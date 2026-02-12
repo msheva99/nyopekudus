@@ -5,12 +5,13 @@ import Image from 'next/image';
 
 export default function PromoNyopeeGo() {
   const [status, setStatus] = useState<'loading' | 'success' | 'already' | 'soldout'>('loading');
-  const [remaining, setRemaining] = useState<number>(15);
+  const [remaining, setRemaining] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<string>('');
 
-  // Effect untuk mengecek promo
+  // 1. Logika Pengecekan Promo & Kunci Perangkat
   useEffect(() => {
     const checkPromo = async () => {
+      // Ambil tanda dari browser (Local Storage)
       const hasLocalClaim = localStorage.getItem('nyopee_already_claimed');
       
       try {
@@ -18,23 +19,29 @@ export default function PromoNyopeeGo() {
         const data = await res.json();
         setRemaining(data.remaining ?? 0);
 
+        // Jika API bilang sudah (by IP/Database) ATAU Browser punya tanda sudah klaim
         if (data.already || hasLocalClaim === 'true') {
           setStatus('already');
           localStorage.setItem('nyopee_already_claimed', 'true');
-        } else if (data.success) {
+        } 
+        // Jika klaim baru berhasil
+        else if (data.success) {
           localStorage.setItem('nyopee_already_claimed', 'true');
           setStatus('success');
-        } else {
+        } 
+        // Jika kuota habis
+        else {
           setStatus('soldout');
         }
       } catch (e) {
+        // Jika error, anggap soldout demi keamanan
         setStatus('soldout');
       }
     };
     checkPromo();
   }, []);
 
-  // Effect untuk Jam Digital (Real-time)
+  // 2. Logika Jam Digital Real-time (Anti-Screenshot)
   useEffect(() => {
     const timer = setInterval(() => {
       const now = new Date();
@@ -47,6 +54,7 @@ export default function PromoNyopeeGo() {
     return () => clearInterval(timer);
   }, []);
 
+  // Komponen Wrapper Background
   const BackgroundWrapper = ({ children }: { children: React.ReactNode }) => (
     <div className="relative min-h-[100dvh] w-full flex items-center justify-center p-4 font-sans text-[#1a1a1a] overflow-hidden">
       <div className="fixed inset-0 -z-10 w-full h-full">
@@ -57,7 +65,7 @@ export default function PromoNyopeeGo() {
           priority 
           className="object-cover object-center" 
         />
-        <div className="absolute inset-0 bg-black/30"></div>
+        <div className="absolute inset-0 bg-black/40"></div>
       </div>
       <div className="relative z-10 w-full flex justify-center scale-[0.9] xs:scale-95 sm:scale-100 transition-transform">
         {children}
@@ -65,34 +73,35 @@ export default function PromoNyopeeGo() {
     </div>
   );
 
+  // --- Tampilan Loading ---
   if (status === 'loading') {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center text-amber-900 font-bold text-sm">
-        Menyiapkan Kopi Kamu...
+        <div className="animate-pulse">Menyiapkan Kopi Kamu...</div>
       </div>
     );
   }
 
-  // --- 1. TAMPILAN SUDAH DIKLAIM (PAGE BARU) ---
+  // --- 1. TAMPILAN SUDAH DIKLAIM (PAGE KHUSUS) ---
   if (status === 'already') {
     return (
       <BackgroundWrapper>
-        <div className="w-full max-w-[300px] bg-white rounded-[2.5rem] shadow-2xl text-center p-8 border-4 border-green-600 animate-in fade-in zoom-in duration-500">
-          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <span className="text-4xl text-green-600">✓</span>
+        <div className="w-full max-w-[300px] bg-white rounded-[2.5rem] shadow-2xl text-center p-8 border-4 border-red-500 animate-in fade-in zoom-in duration-500">
+          <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4 border-2 border-red-100">
+            <span className="text-4xl">🚫</span>
           </div>
-          <h2 className="text-[22px] font-black text-green-700 leading-tight uppercase mb-2">
+          <h2 className="text-[20px] font-black text-red-600 leading-tight uppercase mb-2">
             PROMO SUDAH<br/>PERNAH DIKLAIM
           </h2>
-          <div className="h-1 w-12 bg-green-200 mx-auto mb-4" />
+          <div className="h-1 w-12 bg-red-100 mx-auto mb-4" />
           <p className="text-[11px] font-bold text-gray-500 leading-relaxed uppercase">
-            Maaf, satu akun/perangkat <br/> 
-            hanya berlaku untuk satu kali klaim. <br/>
+            Satu perangkat hanya berlaku <br/> 
+            untuk satu kali klaim. <br/>
             Sampai jumpa di promo berikutnya!
           </p>
           <button 
             onClick={() => window.location.reload()}
-            className="mt-8 text-[9px] font-black text-green-600 underline uppercase tracking-widest"
+            className="mt-8 text-[9px] font-black text-red-400 underline uppercase tracking-widest hover:text-red-600 transition-colors"
           >
             Refresh Status
           </button>
@@ -105,7 +114,10 @@ export default function PromoNyopeeGo() {
   if (status === 'success') {
     return (
       <BackgroundWrapper>
-        <div className="w-full max-w-[320px] bg-[#FDFCFB] rounded-[2.5rem] shadow-2xl text-center pt-4 pb-6 px-6 border-4 border-[#5C4033] animate-in fade-in zoom-in duration-500">
+        <div className="relative w-full max-w-[320px] bg-[#FDFCFB] rounded-[2.5rem] shadow-2xl text-center pt-4 pb-6 px-6 border-4 border-[#5C4033] animate-in fade-in zoom-in duration-500 overflow-hidden">
+          
+          {/* Animasi Cahaya Halus di Background (Anti-Screenshot) */}
+          <div className="absolute -top-10 -right-10 w-32 h-32 bg-amber-100/30 rounded-full animate-pulse"></div>
           
           <div className="relative w-24 h-12 mx-auto mb-1">
             <Image src="/images/logo.png" alt="NYOPEE GO" fill className="object-contain" />
@@ -115,9 +127,10 @@ export default function PromoNyopeeGo() {
             <h2 className="text-[20px] font-black text-[#5C4033] tracking-tighter uppercase leading-tight">
               YEAY! ES TEH + ES KOPI KLEPON MINI GRATIS
             </h2>
-            <div className="inline-block px-3 py-1 bg-amber-100 rounded-full">
-               <p className="text-[10px] font-black text-amber-800 uppercase tabular-nums">
-                🕒 {currentTime || '--:--:--'}
+            {/* Jam Digital Real-time dengan Animasi Bounce */}
+            <div className="inline-block px-4 py-1 bg-green-600 rounded-full shadow-md animate-bounce mt-1">
+               <p className="text-[11px] font-bold text-white tabular-nums uppercase">
+                🕒 Live: {currentTime || '--:--:--'}
               </p>
             </div>
           </div>
@@ -125,7 +138,7 @@ export default function PromoNyopeeGo() {
           <div className="my-4">
             <h1 className="text-[42px] font-extrabold text-[#8B4513] leading-[0.8] tracking-tighter italic">
               GRATIS 1<br/>
-              <span className="text-[12px] not-italic font-black block mt-1 tracking-widest uppercase">
+              <span className="text-[12px] not-italic font-black block mt-1 tracking-widest uppercase text-[#5C4033]">
               Es Teh + Es Kopi Klepon Mini</span>
             </h1>
           </div>
@@ -136,56 +149,58 @@ export default function PromoNyopeeGo() {
             </p>
           </div>
 
-          {/* Lokasi */}
+          {/* Lokasi Outlet */}
           <div className="mb-4">
             <a 
-              href="https://maps.google.com" 
+              href="https://maps.google.com/?q=Nyopee+Go+Jepang+Pakis" 
               target="_blank" 
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 border border-orange-100 bg-white rounded-xl px-3 py-2 w-full shadow-sm"
+              className="inline-flex items-center gap-2 border border-orange-100 bg-white rounded-xl px-3 py-2 w-full shadow-sm active:scale-95 transition-transform"
             >
               <span className="text-orange-500 text-base">📍</span>
               <div className="text-left">
-                <p className="text-[10px] font-black text-gray-800 leading-none">Jl. Budi Utomo, Jepang Pakis</p>
-                <p className="text-[8px] text-gray-400 font-medium">Kec. Jati, Kab. Kudus</p>
+                <p className="text-[10px] font-black text-gray-800 leading-none uppercase">Jl. Budi Utomo, Jepang Pakis</p>
+                <p className="text-[8px] text-gray-400 font-medium uppercase">Kec. Jati, Kab. Kudus</p>
               </div>
             </a>
           </div>
 
-          {/* Kuota */}
-          <div className="bg-[#5C4033] rounded-2xl py-3 mb-4 text-white shadow-lg">
-            <div className="flex justify-center items-baseline gap-1.5">
+          {/* Sisa Kuota */}
+          <div className="bg-[#5C4033] rounded-2xl py-3 mb-4 text-white shadow-lg relative overflow-hidden">
+            <div className="flex justify-center items-baseline gap-1.5 relative z-10">
               <span className="text-3xl font-black tabular-nums">{String(remaining).padStart(2, '0')}</span>
               <span className="text-xs font-bold">ORANG LAGI</span>
             </div>
-            <p className="text-[8px] font-bold uppercase tracking-widest opacity-80 mt-1">Siapa cepat dia dapat!</p>
+            {/* Animasi pulse lembut pada bar kuota */}
+            <div className="absolute inset-0 bg-white/5 animate-pulse"></div>
           </div>
 
-          {/* Instruksi */}
-          <div className="bg-[#D2B48C] rounded-xl p-3 text-[#3E2723] shadow-md">
+          {/* Instruksi Penjual */}
+          <div className="bg-[#D2B48C] rounded-xl p-3 text-[#3E2723] shadow-md border-b-4 border-[#b89b7a]">
             <p className="font-black text-[10px] leading-tight uppercase">
               Tunjukkan halaman ini ke penjual<br/>dan nikmati promo sekarang
             </p>
-            <div className="mt-2 flex items-center justify-center gap-1.5 border-t border-[#3E2723]/10 pt-1.5 text-[8px] font-black animate-pulse uppercase">
-              📸 Jangan lupa screenshot
+            <div className="mt-2 flex items-center justify-center gap-1.5 border-t border-[#3E2723]/10 pt-1.5 text-[8px] font-black uppercase animate-pulse">
+              📸 JANGAN PAKAI SCREENSHOT
             </div>
           </div>
 
-          <p className="mt-4 text-[8px] text-stone-400 font-bold uppercase">
-            Promo terbatas untuk 20 orang pertama
+          <p className="mt-4 text-[8px] text-stone-400 font-bold uppercase tracking-widest">
+            Promo terbatas untuk hari ini
           </p>
         </div>
       </BackgroundWrapper>
     );
   }
 
-  // --- 3. TAMPILAN SOLDOUT ---
+  // --- 3. TAMPILAN SOLDOUT (KUOTA HABIS) ---
   return (
     <BackgroundWrapper>
-      <div className="bg-white p-8 rounded-[2.5rem] shadow-xl max-w-[280px] w-full text-center border-4 border-stone-100">
-        <h1 className="text-xl font-black text-stone-400 uppercase leading-none mb-2">WADUH,<br/>HABIS!</h1>
+      <div className="bg-white p-8 rounded-[2.5rem] shadow-xl max-w-[280px] w-full text-center border-4 border-stone-100 animate-in fade-in duration-700">
+        <h1 className="text-2xl font-black text-stone-400 uppercase leading-none mb-2">WADUH,<br/>HABIS!</h1>
+        <div className="h-1 w-8 bg-stone-100 mx-auto mb-4" />
         <p className="text-stone-500 text-[10px] leading-relaxed uppercase font-bold">
-          Kopi gratisnya sudah habis. Pantau terus Instagram NYOPEE untuk promo berikutnya!
+          Kopi gratisnya sudah habis terjual.<br/>Pantau terus Instagram NYOPEE untuk promo seru lainnya!
         </p>
       </div>
     </BackgroundWrapper>
