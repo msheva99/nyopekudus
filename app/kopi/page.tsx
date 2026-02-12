@@ -9,17 +9,29 @@ export default function PromoNyopeeGo() {
 
   useEffect(() => {
     const checkPromo = async () => {
+      // 1. CEK JEJAK DI BROWSER DULU (Local Storage)
+      const hasLocalClaim = localStorage.getItem('nyopee_already_claimed');
+      
       try {
         const res = await fetch('/api/promo');
         const data = await res.json();
         
         setRemaining(data.remaining ?? 0);
 
-        if (data.success) {
-          setStatus('success');
-        } else if (data.already) {
+        // 2. JIKA REDIS BILANG SUDAH (already: true) ATAU BROWSER PUNYA TANDA
+        if (data.already || hasLocalClaim === 'true') {
           setStatus('already');
-        } else {
+          // Pastikan local storage tetap terisi jika ternyata data.already yang true
+          localStorage.setItem('nyopee_already_claimed', 'true');
+        } 
+        // 3. JIKA KLAIM BARU BERHASIL
+        else if (data.success) {
+          // KUNCI DI BROWSER SAAT ITU JUGA
+          localStorage.setItem('nyopee_already_claimed', 'true');
+          setStatus('success');
+        } 
+        // 4. JIKA KUOTA HABIS
+        else {
           setStatus('soldout');
         }
       } catch (e) {
@@ -139,7 +151,7 @@ export default function PromoNyopeeGo() {
           </div>
 
           <p className="mt-4 text-[8px] text-stone-400 font-bold uppercase tracking-tighter">
-            Promo terbatas untuk 15 orang pertama
+            Promo terbatas untuk 20 orang pertama
           </p>
           
           {status === 'already' && (

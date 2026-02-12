@@ -9,43 +9,53 @@ const redis = new Redis({
 export async function GET(req: NextRequest) {
   try {
     const quotaKey = 'kuota_nyopekudus';
+    
+    // 1. IDENTIFIKASI PERANGKAT (Fingerprint Sederhana)
+    // Menggabungkan IP dan User-Agent agar 1 device sulit klaim di browser berbeda
     const ip = req.headers.get('x-forwarded-for')?.split(',')[0] || '127.0.0.1';
-    const claimKey = `user_claimed_nyopekudus:${ip}`;
+    const ua = req.headers.get('user-agent') || 'unknown';
+    const deviceId = Buffer.from(`${ip}-${ua}`).toString('base64').slice(0, 60);
+    const claimKey = `user_claimed_nyopekudus:${deviceId}`;
 
-    // 1. Ambil data sisa kuota & status klaim IP secara bersamaan
-    const [remaining, hasClaimed] = await Promise.all([
-      redis.get<number>(quotaKey),
-      redis.get(claimKey)
-    ]);
+    // 2. CEK STATUS KLAIM (Cek apakah ID perangkat ini sudah ada di Redis)
+    const hasClaimed = await redis.get(claimKey);
+    
+    if (hasClaimed) {
+      const currentRemaining = await redis.get<number>(quotaKey);
+      return NextResponse.json({
+        success: false,
+        already: true,
+        remaining: currentRemaining ?? 0
+      });
+    }
 
-    let currentQuota = remaining;
+    // 3. CEK KUOTA & EKSEKUSI (Atomic Operation)
+    // Kita ambil kuota saat ini dulu untuk pengecekan awal
+    let currentQuota = await redis.get<number>(quotaKey);
 
-    // Inisialisasi jika database kosong
+    // Inisialisasi jika database Redis masih kosong
     if (currentQuota === null) {
       await redis.set(quotaKey, 15);
       currentQuota = 15;
     }
 
-    // 2. CEK APAKAH SUDAH PERNAH KLAIM (Kunci utama agar refresh terdeteksi)
-    if (hasClaimed) {
-      return NextResponse.json({
-        success: false,
-        already: true,
-        remaining: currentQuota
-      });
-    }
-
-    // 3. JIKA BELUM KLAIM & KUOTA MASIH ADA
     if (currentQuota > 0) {
-      // Kurangi kuota di Redis
-      await redis.decr(quotaKey); 
-      // Kunci IP ini agar saat refresh statusnya jadi 'already'
-      await redis.set(claimKey, "true", { ex: 86400 }); 
+      // PENTING: Gunakan DECR langsung untuk mencegah Race Condition (kuota bocor)
+      const newQuota = await redis.decr(quotaKey);
 
-      return NextResponse.json({
-        success: true,
-        remaining: currentQuota - 1
-      });
+      // Jika hasil pengurangan masih >= 0, berarti klaim VALID
+      if (newQuota >= 0) {
+        // Kunci perangkat ini selama 24 jam (86400 detik)
+        await redis.set(claimKey, "true", { ex: 86400 });
+
+        return NextResponse.json({
+          success: true,
+          remaining: newQuota
+        });
+      } else {
+        // Jika hasil DECR malah minus, berarti kuota habis di milidetik yang sama
+        await redis.set(quotaKey, 0); // Reset ke 0 agar tidak minus terus
+      }
     }
 
     // 4. JIKA KUOTA HABIS
@@ -56,6 +66,7 @@ export async function GET(req: NextRequest) {
     });
 
   } catch (error) {
+    console.error("Promo Error:", error);
     return NextResponse.json({ success: false, remaining: 0 }, { status: 500 });
   }
 }
