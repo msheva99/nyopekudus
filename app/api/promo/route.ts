@@ -11,19 +11,21 @@ export async function GET(req: NextRequest) {
     const quotaKey = 'kuota_nyopekudus';
     
     // 1. IDENTIFIKASI PERANGKAT (Fingerprint)
+    // Mengambil IP asli (menangani proxy Vercel)
     const ip = req.headers.get('x-forwarded-for')?.split(',')[0] || '127.0.0.1';
     const ua = req.headers.get('user-agent') || 'unknown';
-    // Gunakan base64 agar deviceId tidak mengandung karakter aneh untuk key Redis
-    const deviceId = Buffer.from(`${ip}-${ua}`).toString('base64').slice(0, 50);
+    
+    // PENTING: Jangan slice terlalu pendek. Laptop dan HP punya User-Agent yang 
+    // sangat panjang di bagian belakang. Kita simpan lebih panjang agar unik.
+    const deviceId = Buffer.from(`${ip}-${ua}`).toString('base64').replace(/[/+=]/g, '').slice(0, 150);
     const claimKey = `user_claimed_nyopekudus:${deviceId}`;
 
-    // 2. CEK STATUS KLAIM & SISA KUOTA SEKALIGUS
-    // Kita gunakan mget (Multi-Get) agar lebih cepat (hanya 1x panggil Redis)
+    // 2. CEK STATUS KLAIM & SISA KUOTA (Multi-Get untuk efisiensi)
     const [hasClaimed, currentQuotaStr] = await redis.mget<[string | null, string | null]>(claimKey, quotaKey);
     
     let currentQuota = currentQuotaStr !== null ? parseInt(currentQuotaStr) : 15;
 
-    // Jika sudah pernah klaim, langsung stop di sini
+    // JIKA PERANGKAT INI SUDAH PERNAH KLAIM
     if (hasClaimed) {
       return NextResponse.json({
         success: false,
@@ -32,20 +34,23 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // 3. EKSEKUSI PENGURANGAN KUOTA (Atomic)
+    // 3. PROSES KLAIM BARU
     if (currentQuota > 0) {
+      // Operasi ATOMIC: Mengurangi kuota langsung di Redis
       const newQuota = await redis.decr(quotaKey);
 
+      // Jika setelah dikurangi hasilnya masih 0 atau lebih, berarti klaim SAH
       if (newQuota >= 0) {
-        // BERHASIL: Kunci perangkat ini selama 24 jam
+        // KUNCI PERANGKAT: Set agar tidak bisa klaim lagi selama 24 jam
         await redis.set(claimKey, "true", { ex: 86400 });
+        
         return NextResponse.json({
           success: true,
           remaining: newQuota
         });
       } else {
-        // GAGAL: Ternyata pas dikurangi hasilnya minus (keduluan orang lain)
-        await redis.set(quotaKey, 0);
+        // Jika hasil DECR negatif, berarti kuota habis tepat saat request masuk
+        await redis.set(quotaKey, 0); // Pastikan tidak minus di database
       }
     }
 
@@ -57,7 +62,10 @@ export async function GET(req: NextRequest) {
     });
 
   } catch (error) {
-    console.error("Promo Error:", error);
-    return NextResponse.json({ success: false, remaining: 0 }, { status: 500 });
+    console.error("Promo API Error:", error);
+    return NextResponse.json(
+      { success: false, remaining: 0, error: "Internal Server Error" }, 
+      { status: 500 }
+    );
   }
 }
