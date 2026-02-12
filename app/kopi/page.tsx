@@ -8,33 +8,22 @@ export default function PromoNyopeeGo() {
   const [remaining, setRemaining] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<string>('');
 
-  // 1. Logika Pengecekan Promo & Kunci Perangkat
+  // ✅ LOGIKA BARU - Pure API (NO localStorage)
   useEffect(() => {
     const checkPromo = async () => {
-      // Ambil tanda dari browser (Local Storage)
-      const hasLocalClaim = localStorage.getItem('nyopee_already_claimed');
-      
       try {
         const res = await fetch('/api/promo');
         const data = await res.json();
         setRemaining(data.remaining ?? 0);
 
-        // Jika API bilang sudah (by IP/Database) ATAU Browser punya tanda sudah klaim
-        if (data.already || hasLocalClaim === 'true') {
+        if (data.already) {
           setStatus('already');
-          localStorage.setItem('nyopee_already_claimed', 'true');
-        } 
-        // Jika klaim baru berhasil
-        else if (data.success) {
-          localStorage.setItem('nyopee_already_claimed', 'true');
+        } else if (data.success) {
           setStatus('success');
-        } 
-        // Jika kuota habis
-        else {
+        } else {
           setStatus('soldout');
         }
       } catch (e) {
-        // Jika error, anggap soldout demi keamanan
         setStatus('soldout');
       }
     };
