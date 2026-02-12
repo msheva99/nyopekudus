@@ -98,7 +98,8 @@ export default function PromoNyopeeGo() {
           <div className="my-4">
             <h1 className="text-[42px] font-extrabold text-[#8B4513] leading-[0.8] tracking-tighter italic">
               GRATIS 1<br/>
-              <span className="text-[20px] not-italic font-black block mt-1">ES TEH + ES KOPI KLEPON MINI</span>
+              <span className="text-[12px] not-italic font-black block mt-1 tracking-widest">
+              ES TEH + ES KOPI KLEPON MINI</span>
             </h1>
           </div>
 
